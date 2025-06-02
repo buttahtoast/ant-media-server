@@ -40,7 +40,7 @@ jobs:
             docker pull --platform linux/amd64 $SOURCE_IMAGE:$TAG
 
             # Create a temporary Dockerfile that just uses FROM
-            echo "FROM $SOURCE_IMAGE:$TAG" > Dockerfile
+            echo "FROM --platform=\$BUILDPLATFORM $SOURCE_IMAGE:$TAG" > Dockerfile
 
             # Rebuild for arm64 and push multi-arch
             docker buildx build \
