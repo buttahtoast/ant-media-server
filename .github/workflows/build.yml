@@ -1,0 +1,80 @@
+name: Build and Push Ant Media Server Image
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      IMAGE_REGISTRY: ghcr.io
+      IMAGE_OWNER: ${{ github.repository_owner }}
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Buildah and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install buildah qemu-user-static curl jq
+
+      - name: Configure Buildah (vfs for GitHub runners)
+        run: |
+          mkdir -p $HOME/.config/containers
+          echo -e "[storage]\ndriver = \"vfs\"" > $HOME/.config/containers/storage.conf
+
+      - name: Fetch latest Ant Media Server release
+        id: antmedia
+        run: |
+          raw_tag=$(curl -s https://api.github.com/repos/ant-media/Ant-Media-Server/releases/latest | jq -r .tag_name)
+          version=$(echo "$raw_tag" | sed -E 's/^ams-v?//')
+          date=$(date +%Y%m%d)
+          zip_name="ant-media-server-community-${version}.zip"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "date=$date" >> $GITHUB_OUTPUT
+          echo "tag=$version-$date" >> $GITHUB_OUTPUT
+          echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
+
+      - name: Download Ant Media Server ZIP
+        run: |
+          curl -L -o antmedia.zip \
+            "https://github.com/ant-media/Ant-Media-Server/releases/download/ams-v${{ steps.antmedia.outputs.version }}/ant-media-server-community-${{ steps.antmedia.outputs.version }}.zip"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GHCR_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
+
+      - name: Build and push image to GHCR
+        env:
+          VERSION: ${{ steps.antmedia.outputs.version }}
+          DATE: ${{ steps.antmedia.outputs.date }}
+          TAG: ${{ steps.antmedia.outputs.tag }}
+          ZIP_NAME: ${{ steps.antmedia.outputs.zip_name }}
+        run: |
+          IMAGE_FULL="$IMAGE_REGISTRY/$IMAGE_NAME"
+
+          mkdir -p build-context
+          mv antmedia.zip build-context/${ZIP_NAME}
+          cp Dockerfile build-context/
+
+          buildah build --platform=linux/amd64,linux/arm64 \
+            --manifest "$IMAGE_FULL:$TAG" \
+            --build-arg AntMediaServer="$ZIP_NAME" \
+            --build-arg UseSupervisor='true' \
+            --build-arg InstallMediaPush='true' \
+            --tag "$IMAGE_FULL:$TAG" \
+            --push build-context
+
+          # Tag and push 'latest'
+          buildah tag "$IMAGE_FULL:$TAG" "$IMAGE_FULL:latest"
+          buildah push "$IMAGE_FULL:latest"
