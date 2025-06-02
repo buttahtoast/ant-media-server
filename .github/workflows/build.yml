@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-
+      id-token: write
     env:
       IMAGE_REGISTRY: ghcr.io
       IMAGE_OWNER: ${{ github.repository_owner }}
@@ -52,7 +52,7 @@ jobs:
             "https://github.com/ant-media/Ant-Media-Server/releases/download/ams-v${{ steps.antmedia.outputs.version }}/ant-media-server-community-${{ steps.antmedia.outputs.version }}.zip"
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GHCR_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
+        run:  echo "${{ secrets.GITHUB_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
 
       - name: Build and push image to GHCR
         env:
