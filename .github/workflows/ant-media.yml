@@ -58,7 +58,7 @@ jobs:
           TAG: ${{ steps.antmedia.outputs.tag }}
           ZIP_NAME: ${{ steps.antmedia.outputs.zip_name }}
         run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
+          IMAGE="ghcr.io/${{ github.repository }}/ams"
           
           # Compose full tag names
           TAG_VERSION_DATE="${IMAGE}:${TAG}"           # e.g., 2.14.0-20250602
@@ -72,6 +72,7 @@ jobs:
       
           # Build and push all tags
           docker buildx build \
+            -f ant-media/Dockerfile \
             --platform linux/amd64,linux/arm64 \
             --build-arg AntMediaServer=${ZIP_NAME} \
             --tag "$TAG_VERSION_DATE" \
