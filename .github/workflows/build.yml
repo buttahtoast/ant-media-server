@@ -1,40 +1,40 @@
-name: Build and Push Ant Media Server Image
+name: Build and Push Ant Media Server (Multi-Arch)
 
 on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight UTC
+    - cron: '0 0 * * *'  # Daily at midnight
   workflow_dispatch:
 
 jobs:
-  build-and-push:
+  docker-buildx:
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
       packages: write
-      id-token: write
+
     env:
       IMAGE_REGISTRY: ghcr.io
       IMAGE_OWNER: ${{ github.repository_owner }}
       IMAGE_NAME: ${{ github.repository }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Buildah and QEMU
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install buildah qemu-user-static curl jq
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Configure Buildah (vfs for GitHub runners)
-        run: |
-          mkdir -p $HOME/.config/containers
-          echo -e "[storage]\ndriver = \"vfs\"" > $HOME/.config/containers/storage.conf
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch latest Ant Media Server release
+      - name: Fetch latest Ant Media Server release info
         id: antmedia
         run: |
           raw_tag=$(curl -s https://api.github.com/repos/ant-media/Ant-Media-Server/releases/latest | jq -r .tag_name)
@@ -48,33 +48,26 @@ jobs:
 
       - name: Download Ant Media Server ZIP
         run: |
-          curl -L -o antmedia.zip \
-            "https://github.com/ant-media/Ant-Media-Server/releases/download/ams-v${{ steps.antmedia.outputs.version }}/ant-media-server-community-${{ steps.antmedia.outputs.version }}.zip"
+          curl -L -o "antmedia.zip" \
+            "https://github.com/ant-media/Ant-Media-Server/releases/download/ams-v${{ steps.antmedia.outputs.version }}/${{ steps.antmedia.outputs.zip_name }}"
 
-      - name: Log in to GHCR
-        run:  echo "${{ secrets.GITHUB_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
-
-      - name: Build and push image to GHCR
+      - name: Build and push multi-arch image to GHCR
         env:
           VERSION: ${{ steps.antmedia.outputs.version }}
           DATE: ${{ steps.antmedia.outputs.date }}
           TAG: ${{ steps.antmedia.outputs.tag }}
           ZIP_NAME: ${{ steps.antmedia.outputs.zip_name }}
         run: |
-          IMAGE_FULL="$IMAGE_REGISTRY/$IMAGE_NAME"
+          IMAGE="ghcr.io/${{ github.repository }}"
 
           mkdir -p build-context
           mv antmedia.zip build-context/${ZIP_NAME}
           cp Dockerfile build-context/
 
-          buildah build --platform=linux/amd64,linux/arm64 \
-            --manifest "$IMAGE_FULL:$TAG" \
-            --build-arg AntMediaServer="$ZIP_NAME" \
-            --build-arg UseSupervisor='true' \
-            --build-arg InstallMediaPush='true' \
-            --tag "$IMAGE_FULL:$TAG" \
-            --push build-context
-
-          # Tag and push 'latest'
-          buildah tag "$IMAGE_FULL:$TAG" "$IMAGE_FULL:latest"
-          buildah push "$IMAGE_FULL:latest"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg AntMediaServer=${ZIP_NAME} \
+            --tag "$IMAGE:$TAG" \
+            --tag "$IMAGE:latest" \
+            --push \
+            build-context
