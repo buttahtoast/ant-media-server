@@ -59,15 +59,24 @@ jobs:
           ZIP_NAME: ${{ steps.antmedia.outputs.zip_name }}
         run: |
           IMAGE="ghcr.io/${{ github.repository }}"
-
+          
+          # Compose full tag names
+          TAG_VERSION_DATE="${IMAGE}:${TAG}"           # e.g., 2.14.0-20250602
+          TAG_VERSION_ONLY="${IMAGE}:${VERSION}"       # e.g., 2.14.0
+          TAG_LATEST="${IMAGE}:latest"                 # rolling
+      
+          # Prepare build context
           mkdir -p build-context
           mv antmedia.zip build-context/${ZIP_NAME}
           cp Dockerfile build-context/
-
+      
+          # Build and push all tags
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg AntMediaServer=${ZIP_NAME} \
-            --tag "$IMAGE:$TAG" \
-            --tag "$IMAGE:latest" \
+            --tag "$TAG_VERSION_DATE" \
+            --tag "$TAG_VERSION_ONLY" \
+            --tag "$TAG_LATEST" \
             --push \
             build-context
+      
